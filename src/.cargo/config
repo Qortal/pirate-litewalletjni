@@ -1,0 +1,13 @@
+[target.arm-unknown-linux-gnueabihf]
+ar = "/opt/arm-rpi-4.9.3-linux-gnueabihf/bin/arm-linux-gnueabihf-ar"
+linker = "/opt/arm-rpi-4.9.3-linux-gnueabihf/bin/arm-linux-gnueabihf-gcc"
+
+[target.aarch64-unknown-linux-gnu]
+ar = "/opt/arm/9/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-ar"
+linker = "/opt/arm/9/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-gcc"
+
+[target.x86_64-apple-darwin]
+rustflags = [
+  "-C", "link-arg=-undefined",
+  "-C", "link-arg=dynamic_lookup",
+]

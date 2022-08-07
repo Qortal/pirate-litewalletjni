@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "lib",
+    "main"
+]
+
+[profile.release]
+debug = false
