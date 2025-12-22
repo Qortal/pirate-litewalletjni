@@ -45,7 +45,7 @@ function build_rustlib {
     export OPENSSL_INCLUDE_DIR=$(pwd)/${OPENSSL_DIRNAME}/${OPENSSL_DIRNAME}/${ARCH}/include
 
     rustup target add ${RUST_ARCH}
-    rustup component add rustfmt --toolchain 1.46.0-x86_64-unknown-linux-gnu
+    rustup component add rustfmt --toolchain 1.71.1-x86_64-unknown-linux-gnu
     rustup show
 
     cargo build --target ${RUST_ARCH} --release
@@ -93,5 +93,5 @@ function build {
 
 build "x86_64-linux"
 build "aarch64-linux-gnu"
-#build "x86_64-w64-mingw32" # Build not working
+build "x86_64-w64-mingw32"
 #build "arm-linux-gnueabihf" # Library doesn't support 32bit
