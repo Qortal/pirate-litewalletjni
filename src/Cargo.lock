@@ -4080,7 +4080,7 @@ dependencies = [
 [[package]]
 name = "zecwalletlitelib"
 version = "0.1.0"
-source = "git+https://github.com/QuickMythril/piratewallet-light-cli?rev=a33657c781baff898789ab03ae645bb216910276#a33657c781baff898789ab03ae645bb216910276"
+source = "git+https://github.com/QuickMythril/piratewallet-light-cli?rev=2551b76f6a39c9d6c5ffa6a86e19bd4904856669#2551b76f6a39c9d6c5ffa6a86e19bd4904856669"
 dependencies = [
  "arr_macro",
  "base58",
