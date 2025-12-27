@@ -38,8 +38,10 @@ build_openssl() {
   if [ ! -d "${OPENSSL_DIRNAME}/${OPENSSL_DIRNAME}/${ARCH}" ]; then
     cd "${OPENSSL_DIRNAME}"
 
-    make clean
-    make distclean || true
+    if [ -f "Makefile" ]; then
+      make clean || true
+      make distclean || true
+    fi
 
     INSTALL_DIR="$(pwd)/${OPENSSL_DIRNAME}/${ARCH}"
     export CC="clang"
