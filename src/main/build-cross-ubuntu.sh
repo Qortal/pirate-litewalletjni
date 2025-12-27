@@ -1,5 +1,11 @@
 #!/bin/bash
 
+set -euo pipefail
+
+# Resolve script directory robustly (works even if sourced).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 function build_openssl {
     # Build openssl
     OPENSSL_VERSION="1.1.1e"
@@ -9,9 +15,14 @@ function build_openssl {
     OPENSSL_URL_PREFIX="https://www.openssl.org/source/old/1.1.1/"
     OPENSSL_URL="${OPENSSL_URL_PREFIX}${OPENSSL_FILENAME}"
 
-    # Download
+    # Download (retry if a previous attempt left an HTML error page)
     if [ ! -f "${OPENSSL_FILENAME}" ]; then
-        curl "${OPENSSL_URL}" -O "${OPENSSL_FILENAME}"
+        curl -fL "${OPENSSL_URL}" -o "${OPENSSL_FILENAME}"
+    fi
+    if ! gzip -t "${OPENSSL_FILENAME}" >/dev/null 2>&1; then
+        echo "OpenSSL archive looks invalid, re-downloading..."
+        rm -f "${OPENSSL_FILENAME}"
+        curl -fL "${OPENSSL_URL}" -o "${OPENSSL_FILENAME}"
     fi
     # Extract
     if [ ! -d "${OPENSSL_DIRNAME}" ]; then
@@ -27,7 +38,9 @@ function build_openssl {
         make clean
         make distclean
 
-        export PATH=${TOOLCHAIN}:${TOOLCHAIN}/bin:$TOOLCHAIN/${ARCH}/bin:$PATH
+        if [ -n "${TOOLCHAIN:-}" ]; then
+            export PATH=${TOOLCHAIN}:${TOOLCHAIN}/bin:$TOOLCHAIN/${ARCH}/bin:$PATH
+        fi
 
         INSTALL_DIR=$(pwd)/${OPENSSL_DIRNAME}/${ARCH}
 
@@ -41,14 +54,14 @@ function build_openssl {
 function build_rustlib {
     # Build rustlib
     export OPENSSL_STATIC=yes
-    export OPENSSL_LIB_DIR=$(pwd)/${OPENSSL_DIRNAME}/${OPENSSL_DIRNAME}/${ARCH}/lib
-    export OPENSSL_INCLUDE_DIR=$(pwd)/${OPENSSL_DIRNAME}/${OPENSSL_DIRNAME}/${ARCH}/include
+    export OPENSSL_LIB_DIR="${SCRIPT_DIR}/${OPENSSL_DIRNAME}/${OPENSSL_DIRNAME}/${ARCH}/lib"
+    export OPENSSL_INCLUDE_DIR="${SCRIPT_DIR}/${OPENSSL_DIRNAME}/${OPENSSL_DIRNAME}/${ARCH}/include"
 
     rustup target add ${RUST_ARCH}
-    rustup component add rustfmt --toolchain 1.46.0-x86_64-unknown-linux-gnu
+    rustup component add rustfmt --toolchain 1.71.1-x86_64-unknown-linux-gnu
     rustup show
 
-    cargo build --target ${RUST_ARCH} --release
+    cargo build --manifest-path "${SCRIPT_DIR}/Cargo.toml" --target ${RUST_ARCH} --release
 }
 
 function build {
@@ -68,14 +81,22 @@ function build {
     then
         export RUST_ARCH="aarch64-unknown-linux-gnu"
         export OPENSSL_ARCH="linux-aarch64"
-        export TOOLCHAIN="/opt/arm/9/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu"
-        export AR=${TOOLCHAIN}/bin/aarch64-none-linux-gnu-ar
-        export CC=${TOOLCHAIN}/bin/aarch64-none-linux-gnu-gcc
+        # Prefer system cross toolchain if installed; fall back to the old /opt path.
+        if command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
+            export TOOLCHAIN=""
+            export AR="aarch64-linux-gnu-ar"
+            export CC="aarch64-linux-gnu-gcc"
+        else
+            export TOOLCHAIN="/opt/arm/9/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu"
+            export AR=${TOOLCHAIN}/bin/aarch64-none-linux-gnu-ar
+            export CC=${TOOLCHAIN}/bin/aarch64-none-linux-gnu-gcc
+        fi
 
     elif [ "$ARCH" == "x86_64-linux" ]
     then
         export RUST_ARCH="x86_64-unknown-linux-gnu"
         export OPENSSL_ARCH="linux-x86_64"
+        export TOOLCHAIN=""
 
     elif [ "$ARCH" == "x86_64-w64-mingw32" ]
     then
@@ -93,5 +114,5 @@ function build {
 
 build "x86_64-linux"
 build "aarch64-linux-gnu"
-#build "x86_64-w64-mingw32" # Build not working
+build "x86_64-w64-mingw32"
 #build "arm-linux-gnueabihf" # Library doesn't support 32bit

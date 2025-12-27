@@ -8,10 +8,11 @@ edition = "2018"
 
 [dependencies]
 jni = { version = "0.10.2", default-features = false }
-zecwalletlitelib = { git="https://github.com/Qortal/piratewallet-light-cli", default-features=false, rev="9d6704ec42cb5429d8433c486211891b2216ea4c" }
+zecwalletlitelib = { git="https://github.com/Qortal/piratewallet-light-cli", default-features=false, rev="86de26e5d58582e2a3f41ed0008ad1e04730ed3e" }
+zcash_primitives = { git = "https://github.com/piratenetwork/librustzcash", rev = "f2d093fd760e59b950e93e9a4cac329f745aacf6", features = ["transparent-inputs"] }
 lazy_static = "1.4.0"
 num-integer = "0.1.44"
-android_logger = "0.8.6"
+android_logger = "0.10.1"
 log = "0.4.8"
 base64 = "0.11.0"
 

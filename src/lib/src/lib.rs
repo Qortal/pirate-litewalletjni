@@ -1,19 +1,25 @@
 #[macro_use]
 extern crate lazy_static;
 
-use std::sync::{Mutex, Arc};
 use std::cell::RefCell;
+use std::sync::{Arc, Mutex};
 
-use base64::{encode, decode};
-use bip39::{Mnemonic, Language};
-use rand::{Rng, rngs::OsRng};
+use base64::{decode, encode};
+use bip39::{Language, Mnemonic};
+use rand::{rngs::OsRng, Rng};
 
 extern crate serde;
-#[macro_use] extern crate serde_json;
+#[macro_use]
+extern crate serde_json;
 extern crate serde_derive;
 use serde_derive::Deserialize;
 
-use zecwalletlitelib::{commands, lightclient::{LightClient, LightClientConfig}};
+use zcash_primitives::consensus::{BlockHeight, NetworkUpgrade};
+use zecwalletlitelib::{
+    commands,
+    lightclient::{lightclient_config::LightClientConfig, LightClient},
+    MainNetwork, Parameters,
+};
 
 
 #[derive(Deserialize, Clone)]
@@ -29,32 +35,103 @@ pub struct JsAddressParameters {
 }
 
 
-pub fn set_address_params(mut config: LightClientConfig, params: &str) -> LightClientConfig {
+#[derive(Clone)]
+struct CustomParams {
+    coin_type: u32,
+    hrp_sapling_extended_spending_key: String,
+    hrp_sapling_extended_full_viewing_key: String,
+    hrp_sapling_payment_address: String,
+    b58_pubkey_address_prefix: [u8; 2],
+    b58_script_address_prefix: [u8; 2],
+}
 
-    let js_params: JsAddressParameters = match serde_json::from_str(&params) {
-        Ok(js) => js,
-        Err(_) => {return config}
-    };
+impl CustomParams {
+    fn from_mainnet() -> Self {
+        let mainnet = MainNetwork;
+        let mut pubkey_prefix = [0u8; 2];
+        let mut script_prefix = [0u8; 2];
 
-    let ct: u32 = match js_params.coin_type.parse() {
-        Ok(s) => s,
-        Err(_) => return config
-    };
+        let main_pubkey_prefix = mainnet.b58_pubkey_address_prefix();
+        if main_pubkey_prefix.len() == 2 {
+            pubkey_prefix.copy_from_slice(main_pubkey_prefix);
+        }
 
-    if js_params.hrp_sapling_extended_spending_key.len() == 0 {return config}
-    if js_params.hrp_sapling_extended_full_viewing_key.len() == 0 {return config}
-    if js_params.hrp_sapling_payment_address.len() == 0 {return config}
-    if js_params.b58_pubkey_address_prefix.len() != 2 {return config}
-    if js_params.b58_script_address_prefix.len() != 2 {return config}
+        let main_script_prefix = mainnet.b58_script_address_prefix();
+        if main_script_prefix.len() == 2 {
+            script_prefix.copy_from_slice(main_script_prefix);
+        }
 
-    LightClientConfig::set_coin_type(&mut config, ct);
-    LightClientConfig::set_hrp_sapling_extended_spending_key(&mut config, js_params.hrp_sapling_extended_spending_key);
-    LightClientConfig::set_hrp_sapling_extended_full_viewing_key(&mut config, js_params.hrp_sapling_extended_full_viewing_key);
-    LightClientConfig::set_hrp_sapling_payment_address(&mut config, js_params.hrp_sapling_payment_address);
-    LightClientConfig::set_b58_pubkey_address_prefix(&mut config, js_params.b58_pubkey_address_prefix);
-    LightClientConfig::set_b58_script_address_prefix(&mut config, js_params.b58_script_address_prefix);
+        CustomParams {
+            coin_type: mainnet.coin_type(),
+            hrp_sapling_extended_spending_key: mainnet
+                .hrp_sapling_extended_spending_key()
+                .to_string(),
+            hrp_sapling_extended_full_viewing_key: mainnet
+                .hrp_sapling_extended_full_viewing_key()
+                .to_string(),
+            hrp_sapling_payment_address: mainnet.hrp_sapling_payment_address().to_string(),
+            b58_pubkey_address_prefix: pubkey_prefix,
+            b58_script_address_prefix: script_prefix,
+        }
+    }
 
-    config
+    fn from_json(params: &str) -> Option<Self> {
+        let js_params: JsAddressParameters = serde_json::from_str(params).ok()?;
+        let coin_type: u32 = js_params.coin_type.parse().ok()?;
+
+        if js_params.hrp_sapling_extended_spending_key.is_empty() {
+            return None;
+        }
+        if js_params.hrp_sapling_extended_full_viewing_key.is_empty() {
+            return None;
+        }
+        if js_params.hrp_sapling_payment_address.is_empty() {
+            return None;
+        }
+
+        Some(CustomParams {
+            coin_type,
+            hrp_sapling_extended_spending_key: js_params.hrp_sapling_extended_spending_key,
+            hrp_sapling_extended_full_viewing_key: js_params.hrp_sapling_extended_full_viewing_key,
+            hrp_sapling_payment_address: js_params.hrp_sapling_payment_address,
+            b58_pubkey_address_prefix: js_params.b58_pubkey_address_prefix,
+            b58_script_address_prefix: js_params.b58_script_address_prefix,
+        })
+    }
+}
+
+impl Parameters for CustomParams {
+    fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+        MainNetwork.activation_height(nu)
+    }
+
+    fn coin_type(&self) -> u32 {
+        self.coin_type
+    }
+
+    fn hrp_sapling_extended_spending_key(&self) -> &str {
+        &self.hrp_sapling_extended_spending_key
+    }
+
+    fn hrp_sapling_extended_full_viewing_key(&self) -> &str {
+        &self.hrp_sapling_extended_full_viewing_key
+    }
+
+    fn hrp_sapling_payment_address(&self) -> &str {
+        &self.hrp_sapling_payment_address
+    }
+
+    fn b58_pubkey_address_prefix(&self) -> &[u8] {
+        &self.b58_pubkey_address_prefix
+    }
+
+    fn b58_script_address_prefix(&self) -> &[u8] {
+        &self.b58_script_address_prefix
+    }
+}
+
+fn get_address_params(params: &str) -> CustomParams {
+    CustomParams::from_json(params).unwrap_or_else(CustomParams::from_mainnet)
 }
 
 
@@ -62,19 +139,17 @@ pub fn set_address_params(mut config: LightClientConfig, params: &str) -> LightC
 // so we don't have to keep creating it. We need to store it here, in rust
 // because we can't return such a complex structure back to JS
 lazy_static! {
-    static ref LIGHTCLIENT: Mutex<RefCell<Option<Arc<LightClient>>>> = Mutex::new(RefCell::new(None));
+    static ref LIGHTCLIENT: Mutex<RefCell<Option<Arc<LightClient<CustomParams>>>>> = Mutex::new(RefCell::new(None));
 }
 pub fn init_new(server_uri: String, params: String, sapling_output_b64: String, sapling_spend_b64: String) -> String {
-    let server = LightClientConfig::get_server_or_default(Some(server_uri));
-    let (mut config, latest_block_height) = match LightClientConfig::create(server) {
+    let server = LightClientConfig::<CustomParams>::get_server_or_default(Some(server_uri));
+    let params = get_address_params(params.as_str());
+    let (config, latest_block_height) = match LightClientConfig::create(params, server) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             return format!("Error: {}", e);
         }
     };
-
-    //Set Encoding Specifications
-    config = set_address_params(config, params.as_str());
 
     let lightclient = match LightClient::new(&config, latest_block_height) {
         Ok(mut l) => {
@@ -88,7 +163,7 @@ pub fn init_new(server_uri: String, params: String, sapling_output_b64: String, 
         }
     };
 
-    let seed = match lightclient.do_seed_phrase() {
+    let seed = match lightclient.do_seed_phrase_sync() {
         Ok(s) => s.dump(),
         Err(e) => {
             return format!("Error: {}", e);
@@ -101,16 +176,14 @@ pub fn init_new(server_uri: String, params: String, sapling_output_b64: String, 
 }
 
 pub fn init_from_seed(server_uri: String, params: String, seed: String, birthday: u64, sapling_output_b64: String, sapling_spend_b64: String) -> String {
-    let server = LightClientConfig::get_server_or_default(Some(server_uri));
-    let (mut config, _latest_block_height) = match LightClientConfig::create(server) {
+    let server = LightClientConfig::<CustomParams>::get_server_or_default(Some(server_uri));
+    let params = get_address_params(params.as_str());
+    let (config, _latest_block_height) = match LightClientConfig::create(params, server) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             return format!("Error: {}", e);
         }
     };
-
-    //Set Encoding Specifications
-    config = set_address_params(config, params.as_str());
 
     let lightclient = match LightClient::new_from_phrase(seed, &config, birthday, false) {
         Ok(mut l) => {
@@ -124,7 +197,7 @@ pub fn init_from_seed(server_uri: String, params: String, seed: String, birthday
         }
     };
 
-    let seed = match lightclient.do_seed_phrase() {
+    let seed = match lightclient.do_seed_phrase_sync() {
         Ok(s) => s.dump(),
         Err(e) => {
             return format!("Error: {}", e);
@@ -137,8 +210,9 @@ pub fn init_from_seed(server_uri: String, params: String, seed: String, birthday
 }
 
 pub fn init_from_b64(server_uri: String, params: String, base64_data: String, sapling_output_b64: String, sapling_spend_b64: String) -> String {
-    let server = LightClientConfig::get_server_or_default(Some(server_uri));
-    let (mut config, _latest_block_height) = match LightClientConfig::create(server) {
+    let server = LightClientConfig::<CustomParams>::get_server_or_default(Some(server_uri));
+    let params = get_address_params(params.as_str());
+    let (config, _latest_block_height) = match LightClientConfig::create(params, server) {
         Ok((c, h)) => (c, h),
         Err(e) => {
             let data = json!({
@@ -148,9 +222,6 @@ pub fn init_from_b64(server_uri: String, params: String, base64_data: String, sa
             return serde_json::to_string(&data).unwrap();
         }
     };
-
-    //Set Encoding Specifications
-    config = set_address_params(config, params.as_str());
 
     let decoded_bytes = match decode(&base64_data) {
         Ok(b) => b,
@@ -199,7 +270,7 @@ pub fn init_from_b64(server_uri: String, params: String, base64_data: String, sa
 
 pub fn save_to_b64() -> String {
     // Return the wallet as a base64 encoded string
-    let lightclient: Arc<LightClient>;
+    let lightclient: Arc<LightClient<CustomParams>>;
     {
         let lc = LIGHTCLIENT.lock().unwrap();
 
@@ -210,7 +281,7 @@ pub fn save_to_b64() -> String {
         lightclient = lc.borrow().as_ref().unwrap().clone();
     };
 
-    match lightclient.do_save_to_buffer() {
+    match lightclient.do_save_to_buffer_sync() {
         Ok(buf) => encode(&buf),
         Err(e) => {
             format!("Error: {}", e)
@@ -221,7 +292,7 @@ pub fn save_to_b64() -> String {
 pub fn execute(cmd: String, args_list: String) -> String {
     let resp: String;
     {
-        let lightclient: Arc<LightClient>;
+        let lightclient: Arc<LightClient<CustomParams>>;
         {
             let lc = LIGHTCLIENT.lock().unwrap();
 
