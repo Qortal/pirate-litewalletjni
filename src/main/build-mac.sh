@@ -49,7 +49,11 @@ build_openssl() {
     export CFLAGS="${OPENSSL_CFLAGS} -isysroot ${SDKROOT}"
     export LDFLAGS="${OPENSSL_LDFLAGS} -isysroot ${SDKROOT}"
 
-    ./Configure --prefix="${INSTALL_DIR}" --openssldir="${INSTALL_DIR}/ssl" "${OPENSSL_ARCH}"
+    if [ -z "${OPENSSL_ARCH:-}" ]; then
+      echo "OPENSSL_ARCH is not set; cannot configure OpenSSL."
+      exit 1
+    fi
+    ./Configure "${OPENSSL_ARCH}" --prefix="${INSTALL_DIR}" --openssldir="${INSTALL_DIR}/ssl"
     make -j"$(num_jobs)"
     make -j"$(num_jobs)" install
     cd "${SCRIPT_DIR}"
@@ -84,6 +88,10 @@ build() {
     export OPENSSL_LDFLAGS="-arch x86_64 -target x86_64-apple-macos10.13"
   else
     echo "Unknown architecture: ${ARCH}"
+    exit 1
+  fi
+  if [ -z "${OPENSSL_ARCH:-}" ]; then
+    echo "OPENSSL_ARCH is empty for ${ARCH}"
     exit 1
   fi
 
